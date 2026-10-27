@@ -2,11 +2,11 @@
 
 **What this is**
 
-Rebuild is a small web app that builds a gym session to fit the time you have, picks exercises according to which muscle groups have recovered, prescribes weights from your own log, and charts your progress. It runs entirely on your iPhone once installed. Your training data never leaves the phone unless you export it.
+Rebuild is a small web app that builds a gym session to fit the time you have, picks exercises according to which muscle groups have recovered, prescribes weights from your own log, and charts your progress. It runs on your iPhone once installed and keeps a full copy of your data there, so it works without signal. If you set up cloud saving (step 4), it also copies your data to your own Google Firebase database whenever you have signal.
 
 **What is in the folder**
 
-`index.html`, `app.js` and `engine.js` are the app itself. `sw.js` and `manifest.webmanifest` let it install to the home screen and work without signal. The `icons` and `fonts` folders hold the app icon and the number typeface. This file is only instructions and is not needed by the app.
+`index.html`, `app.js`, `engine.js` and `guides.js` are the app itself. `cloud.js`, `firebase.js` and `cloud-config.js` handle cloud saving. `sw.js` and `manifest.webmanifest` let it install to the home screen and work without signal. The `icons` and `fonts` folders hold the app icon and the number typeface. This file is only instructions and is not needed by the app.
 
 **Step 1: put it on GitHub Pages (about ten minutes, easiest on your PC)**
 
@@ -28,6 +28,35 @@ Open Setup and check the equipment list. Every Watson plate-loaded machine is ti
 
 The first time you do each exercise is a calibration: start light, add weight each set, and stop at a weight you could lift for the stated reps with two or three in reserve. Rate the last set. From the next session the app sets the working weight itself.
 
+**Step 4: cloud saving with Google Firebase (about 15 minutes, easiest on your PC)**
+
+This is optional but recommended: it protects your history if the phone is lost and lets you sign in on another device. Firebase's free Spark plan needs no payment card. Menu names below are from Google's current documentation; if a screen looks different, the same options will be nearby.
+
+1. Go to console.firebase.google.com and sign in with a Google account. Create a new Firebase project called `rebuild`, accept the terms and continue. You can leave Gemini and Google Analytics switched off. Click Create project.
+2. In the left-hand menu open Security, then Authentication, and click Get started if asked. On the Sign-in method tab choose Email/Password, switch on the first option (Email/Password, not Email link) and click Save. Then on the Users tab click Add user and enter your email address and a password of your choosing. This is the password you will type into the app; you never need to give it to anyone else.
+3. In the left-hand menu open Databases & Storage, then Firestore, and click Create database. Choose a location in or near the UK (London is europe-west2), choose Production mode, and click Create.
+4. Still in Firestore, open the Rules tab, delete everything there, paste the rules below, and click Publish. They allow only your signed-in account to read or write your data.
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /users/{uid}/{rest=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}
+```
+
+5. Go back to the project's overview page and click the Web icon (`</>`). Give the app the nickname `Rebuild`, leave Firebase Hosting unticked, and click Register app. Firebase shows a block of code containing `const firebaseConfig = { apiKey: ... };`. Copy from `const firebaseConfig` down to the closing `};`. You can find it again later under the gear icon, Project settings, General, Your apps. These values identify your project and are not secret; Google's documentation says they are fine in a public repository, because the rules above do the protecting.
+6. In your GitHub `rebuild` repository, open `cloud-config.js`, click the pencil (Edit) button, replace the example `const firebaseConfig = { ... };` block with the one you copied, and click Commit changes. (Alternatively, paste the block into Setup, Cloud saving on the phone; that stores it on that phone only.)
+7. On the iPhone, open Rebuild with signal, close it and open it again so it loads the new settings. Go to Setup, Cloud saving, enter the email and password from step 2 and tap Sign in. The first sign-in uploads everything already on the phone. The line at the foot of the Home screen then reads "Saved to the cloud at" and the time.
+
+From then on every change saves on the phone first and uploads a few seconds later. With no signal the Home screen says the changes will upload automatically, and they do as soon as signal returns. Signing in on another device downloads everything. Signing out keeps the data on the phone. Erase all data, while signed in, deletes the cloud copy as well.
+
 **Using it**
 
 The Home tab is a dashboard: sessions this week against your weekly goal, sets, volume compared with the same point last week, your streak, your last session and latest best, and how recovered each muscle group is. The Next session panel shows what the planner suggests. Choose how many minutes you have, tap Start next session, and the day's workout opens. Each exercise has a How to button (technique cues, a specific coaching video for most exercises with a link to more videos, and, for Watson machines, a link to photos of the machine) and a Swap button offering three alternatives that do the same job, usually one machine, one free-weight and one cable option.
@@ -40,11 +69,11 @@ Weights follow double progression. When you hit the top of the rep range on ever
 
 **Backing up**
 
-Setup has Back up to a file, which opens the share sheet so you can save to Files or iCloud Drive, and Restore from a backup. Back up now and then: if the phone is lost or the app is deleted from the home screen, the data goes with it. Copy the last 14 days for Claude produces a text summary you can paste into a chat for a review of your loading.
+With cloud saving set up, your data is already copied to Firebase. Setup also has Back up to a file, which opens the share sheet so you can save to Files or iCloud Drive, and Restore from a backup. Without cloud saving, back up now and then: if the phone is lost or the app is deleted from the home screen, the data goes with it. Copy the last 14 days for Claude produces a text summary you can paste into a chat for a review of your loading.
 
 **Updating the app later**
 
-Upload the replacement files to the same repository, overwriting the old ones, and change the version line at the top of `sw.js` (for example to `rebuild-1.2.1`). The phone picks up the new version the next time the app is opened with signal, and the one after that shows it. Your data is unaffected.
+Upload the replacement files to the same repository, overwriting the old ones, and change the version line at the top of `sw.js` (for example to `rebuild-1.3.1`). The phone picks up the new version the next time the app is opened with signal, and the one after that shows it. Your data is unaffected.
 
 **Known limits**
 

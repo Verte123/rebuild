@@ -536,11 +536,13 @@
     return { focus, scores, reason: focusReason(state, now, focus, by, done.length) };
   }
 
-  function ago(hours) {
+  function ago(hours, now) {
     if (!isFinite(hours)) return 'not yet trained';
-    const d = Math.round(hours / 24);
-    if (hours < 20) return 'trained today';
-    if (d <= 1) return 'trained yesterday';
+    const then = new Date(now - hours * 3600e3); then.setHours(0, 0, 0, 0);
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const d = Math.round((today - then) / DAY);
+    if (d <= 0) return 'trained today';
+    if (d === 1) return 'trained yesterday';
     return `trained ${d} days ago`;
   }
 
@@ -553,7 +555,7 @@
       .map(m => by[m.id]).filter(m => m.recovery < 0.9).sort((a, b) => a.recovery - b.recovery);
     let s = `${t.name}: ` + (ready.length === mine.length ? `${list(mine.map(m => m.name.toLowerCase()))} are recovered` : `${list(mine.map(m => m.name.toLowerCase()))} are the freshest groups`);
     const latest = mine.filter(m => isFinite(m.hours)).sort((a, b) => a.hours - b.hours)[0];
-    if (latest) s += ` (${latest.name.toLowerCase()} ${ago(latest.hours)})`;
+    if (latest) s += ` (${latest.name.toLowerCase()} ${ago(latest.hours, now)})`;
     if (others.length) s += `; ${others[0].name.toLowerCase()} still recovering`;
     return s + '.';
   }
@@ -637,11 +639,17 @@
 
     // time away from this exercise
     if (days > 14) {
-      const f = days > 28 ? 0.8 : 0.9;
-      const from = last.mode === 'calibrate' ? w : last.weight;
-      w = adj(state, ex, from, f);
+      const gap = days > 28 ? Math.round(days / 7) + ' weeks' : Math.round(days) + ' days';
       target = new Array(sets).fill(lo);
-      why = `Last done ${days > 28 ? Math.round(days / 7) + ' weeks' : Math.round(days) + ' days'} ago: eased back about ${f === 0.8 ? 20 : 10}% from ${fmt(from)}${unitOf(ex)}.`;
+      if (ex.load === 'bodyweight') {
+        why = `Last done ${gap} ago: aim for the bottom of the range and build back up.`;
+      } else {
+        const f = days > 28 ? 0.8 : 0.9;
+        const from = last.mode === 'calibrate' ? w : last.weight;
+        w = adj(state, ex, from, f);
+        const fromText = ex.load === 'stack' ? `${fmt(from)} on the stack` : ex.load === 'assist' ? `${fmt(from)} assistance` : `${fmt(from)} kg`;
+        why = `Last done ${gap} ago: ${ex.load === 'assist' ? 'a little more assistance than' : `eased back about ${f === 0.8 ? 20 : 10}% from`} ${fromText}.`;
+      }
     }
 
     if (ctx.readiness === 'flat') {
@@ -707,9 +715,12 @@
     if (session) session.items.forEach(i => { const e = exById(state, i.exId); if (e && !e.custom) e.eq.forEach(g => g.length === 1 && usedMachines.add(g[0])); });
     const pool = allExercises(state).filter(e => e.slots.includes(slot) && isAvailable(e, st) && !state.prefs.excluded[e.id] && !inSession.has(e.id));
     // the exercise this slot used last time in the same session type (A or B) is its anchor
-    const same = session ? state.sessions.filter(s => s.end && s.focus === session.focus && s.variant === session.variant).sort((a, b) => b.end - a.end)[0] : null;
-    const anchorItem = same && same.items.find(i => i.slot === slot);
-    const anchorId = anchorItem ? anchorItem.exId : null;
+    // the exercise most recently used for this slot in the same session type (A or B) is its anchor
+    let anchorId = null;
+    if (session) {
+      const same = state.sessions.filter(s => s.end && s.focus === session.focus && s.variant === session.variant && now - s.end < 42 * DAY).sort((a, b) => b.end - a.end);
+      for (const s of same) { const it = s.items.find(i => i.slot === slot); if (it) { anchorId = it.exId; break; } }
+    }
     const recentIds = new Set();
     state.sessions.filter(s => s.end && now - s.end < 4 * DAY).forEach(s => s.items.forEach(i => recentIds.add(i.exId)));
     return pool.map((e, idx) => {
@@ -721,7 +732,7 @@
       if (recentIds.has(e.id)) score -= 3;          // vary exercises between sessions a few days apart
       if (state.prefs.fav[e.id]) score += 3;
       if (status.stall >= 3) score -= 6;              // stuck: rotate
-      if (e.slots[0] !== slot) score -= 1;            // prefer exercises whose main job is this slot
+      if (e.slots[0] !== slot) score -= 3;            // prefer exercises whose main job is this slot
       if (e.eq.some(g => g.length === 1 && usedMachines.has(g[0]))) score -= 4;
       if (e.custom) score += 0.5;
       return { ex: e, score, status };

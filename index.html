@@ -181,18 +181,18 @@ textarea { padding: 10px 12px; min-height: 120px; }
 .plates .txt b { font-family: var(--num); font-size: 18px; color: var(--ink); }
 
 .sets { margin: 4px 0 6px; }
-.set { display: grid; grid-template-columns: 22px 1fr 1fr 52px; gap: 8px; align-items: center; padding: 5px 0; }
+.set { display: grid; grid-template-columns: 20px 1.3fr 1fr 48px; gap: 6px; align-items: center; padding: 5px 0; }
 .set .n { font-family: var(--num); font-size: 18px; color: var(--ink-3); text-align: center; }
-.stepper { display: grid; grid-template-columns: 38px 1fr 38px; align-items: center; background: var(--raised); border-radius: 12px; height: 50px; }
+.stepper { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; background: var(--raised); border-radius: 12px; height: 50px; }
 .stepper button { border: 0; background: none; height: 100%; font-size: 22px; color: var(--ink-2); }
 .stepper input {
   border: 0; background: transparent; text-align: center; min-height: 0; height: 100%; width: 100%; padding: 0;
-  font-family: var(--num); font-weight: 600; font-size: 26px; font-variant-numeric: tabular-nums;
+  font-family: var(--num); font-weight: 600; font-size: 25px; font-variant-numeric: tabular-nums;
 }
 .stepper input::placeholder { color: var(--ink-3); opacity: .7; }
 .stepper .unit { display: none; }
-.set-head { display: grid; grid-template-columns: 22px 1fr 1fr 52px; gap: 8px; font-size: 12px; color: var(--ink-3); text-align: center; }
-.tick { width: 52px; height: 50px; border-radius: 12px; border: 2px solid var(--line); background: var(--surface); display: grid; place-items: center; color: var(--ink-3); }
+.set-head { display: grid; grid-template-columns: 20px 1.3fr 1fr 48px; gap: 6px; font-size: 12px; color: var(--ink-3); text-align: center; }
+.tick { width: 48px; height: 50px; border-radius: 12px; border: 2px solid var(--line); background: var(--surface); display: grid; place-items: center; color: var(--ink-3); }
 .tick svg { width: 26px; height: 26px; }
 .set.done .stepper { background: var(--good-soft); }
 .set.done .tick { background: var(--good); border-color: var(--good); color: #fff; }
@@ -230,6 +230,7 @@ body.resting { padding-bottom: calc(var(--tabbar) + 76px + env(safe-area-inset-b
 .opt b { display: block; font-weight: 600; }
 .opt span { font-size: 13px; color: var(--ink-3); }
 @media (prefers-reduced-motion: reduce) { .sheet { transition: none; } }
+@media (max-width: 359px) { .stepper { grid-template-columns: 26px minmax(0, 1fr) 26px; } .stepper input { font-size: 21px; } .set, .set-head { gap: 4px; } }
 
 /* ---------------------------------------------------------------- summary & history */
 .statline { display: flex; gap: 22px; flex-wrap: wrap; margin: 6px 0 4px; }
@@ -331,6 +332,13 @@ a.btn { text-decoration: none; color: var(--ink); }
 .clip b { display: block; font-weight: 600; line-height: 1.3; }
 .clip span span { display: block; font-size: 13px; color: var(--ink-3); margin-top: 2px; }
 
+
+/* ---------------------------------------------------------------- cloud */
+.cloudline { font-size: 13px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; margin: 14px 2px 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--ink-3); }
+.dot.ok { background: var(--good); } .dot.wait { background: var(--warn); } .dot.bad { background: var(--bad); } .dot.busy { background: var(--accent); }
+#cloud-cfg { min-height: 110px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+#cloud-msg { color: var(--bad); min-height: 1em; margin: 4px 0 10px; }
 </style>
 </head>
 <body>
@@ -365,6 +373,9 @@ a.btn { text-decoration: none; color: var(--ink); }
 
 <script src="engine.js"></script>
 <script src="guides.js"></script>
+<script src="firebase.js"></script>
+<script src="cloud-config.js"></script>
+<script src="cloud.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

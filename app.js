@@ -17,11 +17,14 @@
   ui.summary = null;
   function readUi() { try { return JSON.parse(localStorage.getItem(UIKEY)) || {}; } catch (e) { return {}; } }
   let saveTimer = null;
-  function write() {
+  const Cloud = window.Cloud && window.Cloud.available ? window.Cloud : null;
+  function write(noUpload) {
+    if (Cloud) Cloud.stamp(state, Date.now());
     try {
       localStorage.setItem(KEY, JSON.stringify(state));
       localStorage.setItem(UIKEY, JSON.stringify({ tab: ui.tab, minutes: ui.minutes, focus: ui.focus, readiness: ui.readiness, progressEx: ui.progressEx }));
     } catch (e) { toast('Could not save: this browser is blocking storage.'); }
+    if (Cloud && !noUpload) Cloud.schedule();
   }
   function save(now) { clearTimeout(saveTimer); if (now) write(); else saveTimer = setTimeout(write, 120); }
   document.addEventListener('visibilitychange', () => {
@@ -176,7 +179,8 @@
       </div>
       <h4>Recovery</h4>
       <div class="panel"><div class="recov">${ms.map(recovRow).join('')}</div>
-      <p class="small" style="margin-top:10px">Based on when each muscle group last worked and how many sets it did.</p></div>`;
+      <p class="small" style="margin-top:10px">Based on when each muscle group last worked and how many sets it did.</p></div>
+      <p class="cloudline" id="cloudline">${cloudLine()}</p>`;
   }
   function wShort(e, w) {
     if (e.load === 'bodyweight') return w > 0 ? `+${f(w)} kg` : 'bodyweight';
@@ -452,6 +456,7 @@
     if (empty && !confirm(`${empty} exercise${empty === 1 ? ' has' : 's have'} no sets logged and will be left out. Save the session?`)) return;
     const now = Date.now();
     const fin = E.completeSession(state, s, now);
+    fin.updatedAt = fin.end;
     E.commitSession(state, fin);
     ui.summary = fin.id; rest = null; tickRest(); releaseWake();
     save(true); render(); window.scrollTo(0, 0);
@@ -728,9 +733,12 @@
         <button type="button" class="btn primary block" data-action="add-custom">Add exercise</button>
       </div>
 
+      <h4>Cloud saving</h4>
+      <div class="panel" id="cloudpanel">${cloudPanel()}</div>
+
       <h4>Your data</h4>
       <div class="panel">
-        <p class="sub">Everything is stored on this device only. Back up now and then so a lost or replaced phone doesn't cost you your history.</p>
+        <p class="sub">${Cloud && Cloud.signedIn() ? 'Your data is kept on this phone and copied to your Google cloud.' : 'Your data is kept on this phone only. Back up now and then, or set up cloud saving above.'}</p>
         <div class="stack-gap" style="margin-top:12px">
           <button type="button" class="btn block" data-action="backup">Back up to a file</button>
           <label class="btn block" style="cursor:pointer">Restore from a backup<input type="file" accept="application/json,.json" data-action="restore" hidden></label>
@@ -738,7 +746,7 @@
           <button type="button" class="btn block danger" data-action="erase">Erase all data</button>
         </div>
       </div>
-      <p class="small" style="margin:18px 0">Rebuild 1.2. Session plans are general training guidance, not medical advice.</p>`;
+      <p class="small" style="margin:18px 0">Rebuild 1.3. Session plans are general training guidance, not medical advice.</p>`;
   }
 
   async function backup() {
@@ -834,10 +842,10 @@
           const val = inp.dataset.hfield === 'w' ? parseFloat(inp.value.replace(',', '.')) : parseInt(inp.value, 10);
           if (!isNaN(val)) x[inp.dataset.hfield] = val;
         });
-        ses.totals = E.sessionTotals(state, ses); save(true); histSheet(ses.id, false); renderHistory(); toast('Changes saved.'); break;
+        ses.totals = E.sessionTotals(state, ses); ses.updatedAt = Date.now(); save(true); histSheet(ses.id, false); renderHistory(); toast('Changes saved.'); break;
       }
       case 'hist-del':
-        if (confirm('Delete this session for good?')) { state.sessions = state.sessions.filter(x => x.id !== el.dataset.id); save(true); closeSheet(); renderHistory(); }
+        if (confirm('Delete this session for good?')) { state.sessions = state.sessions.filter(x => x.id !== el.dataset.id); state.deleted = (state.deleted || []).concat([{ id: el.dataset.id, t: Date.now() }]); save(true); closeSheet(); renderHistory(); }
         break;
       case 'toggle-table': ui.tables[v] = !ui.tables[v]; renderProgress(); break;
       case 'eq-all': { const g = E.EQUIPMENT_GROUPS.find(x => x.id === el.dataset.g); g.items.forEach(it => { state.settings.equipment[it.id] = v === '1'; }); save(); renderSetupKeepOpen(g.id); break; }
@@ -863,9 +871,30 @@
       }
       case 'backup': backup(); break;
       case 'copy-claude': copyText(E.exportSummary(state, 14, Date.now())); break;
-      case 'erase':
-        if (confirm('Erase every session, setting and exercise? This cannot be undone.') && confirm('Are you sure? Consider backing up first.')) { state = E.newState(); save(true); render(); toast('All data erased.'); }
+      case 'erase': {
+        const inCloud = Cloud && Cloud.signedIn();
+        const msg = inCloud ? 'Erase every session, setting and exercise on this phone AND in your cloud copy? This cannot be undone.'
+          : 'Erase every session, setting and exercise on this phone? This cannot be undone.' + (Cloud && Cloud.isConfigured() ? ' Your cloud copy is not affected while you are signed out.' : '');
+        if (confirm(msg) && confirm('Are you sure? Consider backing up first.')) {
+          const now = Date.now();
+          const gone = state.sessions.map(x => ({ id: x.id, t: now })).concat(state.deleted || []);
+          state = E.newState();
+          if (inCloud) { state.deleted = gone; state.profileUpdatedAt = now; state.activeUpdatedAt = now; }
+          save(true); render(); toast(inCloud ? 'All data erased here and in the cloud.' : 'All data erased.');
+        }
         break;
+      }
+      case 'cloud-signin': cloudSignIn(); break;
+      case 'cloud-reset': cloudReset(); break;
+      case 'cloud-signout':
+        if (confirm('Sign out? Your data stays on this phone; changes will not upload until you sign in again.')) Cloud.signOut().then(renderCloudPanel);
+        break;
+      case 'cloud-sync': Cloud.sync({ full: true }); break;
+      case 'cloud-config': {
+        const ok = Cloud && Cloud.saveConfig($('#cloud-cfg').value);
+        if (!ok) { toast('That doesn\'t look like a Firebase config block. Copy the whole firebaseConfig section.'); break; }
+        toast('Settings saved. Restarting…'); setTimeout(() => location.reload(), 600); break;
+      }
     }
   });
   function renderSetupKeepOpen(gid) {
@@ -898,7 +927,8 @@
           const data = JSON.parse(r.result);
           if (!data || !Array.isArray(data.sessions)) throw new Error('not a backup');
           if (!confirm(`Replace everything on this device with the backup (${data.sessions.length} sessions)?`)) return;
-          state = E.normalise(data); save(true); render(); toast('Backup restored.');
+          state = E.normalise(data); state.profileUpdatedAt = Date.now(); state.activeUpdatedAt = Date.now(); state._profileSig = null; state._activeSig = null;
+          save(true); render(); toast('Backup restored.');
         } catch (e) { toast('That file is not a Rebuild backup.'); }
       };
       r.readAsText(t.files[0]); t.value = '';
@@ -913,6 +943,74 @@
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) toast('Rebuild has been updated.'); had = true; });
   }
 
+  /* ------------------------------------------------------------ cloud saving */
+  function hhmm(t) { return new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
+  function cloudLine() {
+    if (!Cloud) return '<span class="dot off"></span>Saved on this phone only.';
+    const st = Cloud.status;
+    switch (st.state) {
+      case 'unconfigured': return '<span class="dot off"></span>Saved on this phone only. Set up cloud saving in Setup.';
+      case 'signed-out': return '<span class="dot off"></span>Saved on this phone. Sign in on the Setup tab to save to the cloud.';
+      case 'syncing': return '<span class="dot busy"></span>Saving to the cloud…';
+      case 'synced': return `<span class="dot ok"></span>Saved to the cloud at ${hhmm(st.at)}`;
+      case 'offline': return '<span class="dot wait"></span>No signal: saved on this phone, will upload automatically.';
+      default: return `<span class="dot bad"></span>${esc(st.message || 'Cloud problem.')}`;
+    }
+  }
+  function cloudPanel() {
+    if (!Cloud) return '<p class="sub">Cloud saving could not load on this device. Your data is still saved on this phone.</p>';
+    const st = Cloud.status;
+    if (st.state === 'unconfigured') return `
+      <p class="sub">Not set up yet. Follow the cloud steps in the setup guide, then either update <b>cloud-config.js</b> in GitHub or paste the <b>firebaseConfig</b> block from Firebase here.</p>
+      <label class="field"><span>Firebase config</span><textarea id="cloud-cfg" spellcheck="false" autocapitalize="off" placeholder="const firebaseConfig = { apiKey: &quot;…&quot;, … };"></textarea></label>
+      <button type="button" class="btn block" data-action="cloud-config">Save settings</button>`;
+    if (!Cloud.signedIn()) return `
+      <p class="sub">Sign in with the email and password you added in Firebase. Your data on this phone is combined with your cloud copy.</p>
+      <label class="field"><span>Email</span><input type="email" id="cloud-email" autocomplete="username" autocapitalize="off" inputmode="email"></label>
+      <label class="field"><span>Password</span><input type="password" id="cloud-pass" autocomplete="current-password"></label>
+      <p class="small" id="cloud-msg" role="alert">${st.state === 'error' ? esc(st.message) : ''}</p>
+      <button type="button" class="btn primary block" data-action="cloud-signin">Sign in</button>
+      <div class="row" style="justify-content:center"><button type="button" class="linkish" data-action="cloud-reset">Forgotten password</button></div>`;
+    return `
+      <p class="sub">Signed in as <b>${esc(st.email || '')}</b>.</p>
+      <p class="cloudline" style="margin:8px 0 12px">${cloudLine()}</p>
+      <div class="row"><button type="button" class="btn grow" data-action="cloud-sync">Sync now</button><button type="button" class="btn grow" data-action="cloud-signout">Sign out</button></div>`;
+  }
+  function renderCloudPanel() {
+    const p = document.getElementById('cloudpanel');
+    if (p && !(p.contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName))) p.innerHTML = cloudPanel();
+    const l = document.getElementById('cloudline'); if (l) l.innerHTML = cloudLine();
+  }
+  async function cloudSignIn() {
+    const email = ($('#cloud-email') || {}).value || '', pass = ($('#cloud-pass') || {}).value || '';
+    const msg = $('#cloud-msg');
+    if (!email || !pass) { if (msg) msg.textContent = 'Enter your email and password.'; return; }
+    const btn = document.querySelector('[data-action="cloud-signin"]'); if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
+    try { await Cloud.signIn(email, pass); if (document.activeElement) document.activeElement.blur(); renderCloudPanel(); toast('Signed in. Your data is being saved to the cloud.'); }
+    catch (e) { if (msg) msg.textContent = e.message; if (btn) { btn.disabled = false; btn.textContent = 'Sign in'; } }
+  }
+  async function cloudReset() {
+    const email = ($('#cloud-email') || {}).value || '';
+    const msg = $('#cloud-msg');
+    if (!email) { if (msg) msg.textContent = 'Enter your email first, then tap Forgotten password.'; return; }
+    try { await Cloud.resetPassword(email); if (msg) msg.textContent = 'If that address has an account, a reset email is on its way.'; }
+    catch (e) { if (msg) msg.textContent = e.message; }
+  }
+  let pendingRender = false;
+  function busyTyping() { const a = document.activeElement; return a && /INPUT|TEXTAREA|SELECT/.test(a.tagName); }
+  document.addEventListener('focusout', () => { if (pendingRender) setTimeout(() => { if (!busyTyping() && pendingRender) { pendingRender = false; render(); } }, 50); });
+
   render();
   requestWake();
+  if (Cloud) Cloud.start({
+    get: () => state,
+    set: merged => {
+      state = E.normalise(merged);
+      ui.preview = null;
+      write(true);
+      if (busyTyping()) pendingRender = true; else render();
+    },
+    persist: () => write(true),
+    onStatus: renderCloudPanel
+  });
 })();
