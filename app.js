@@ -12,7 +12,8 @@
     try { return E.normalise(JSON.parse(localStorage.getItem(KEY))); } catch (e) { return E.newState(); }
   }
   let state = load();
-  let ui = Object.assign({ tab: 'train', minutes: 45, focus: 'auto', readiness: 'normal', progressEx: null, tables: {}, summary: null }, readUi());
+  let ui = Object.assign({ tab: 'train', minutes: 45, focus: 'auto', readiness: 'normal', progressEx: null, tables: {}, summary: null, sMinutes: 15 }, readUi());
+  ui.sSalt = 0; ui.sPreview = null; ui.sSummary = null;
   ui.dash = false; ui.preview = null;
   ui.summary = null;
   function readUi() { try { return JSON.parse(localStorage.getItem(UIKEY)) || {}; } catch (e) { return {}; } }
@@ -22,14 +23,14 @@
     if (Cloud) Cloud.stamp(state, Date.now());
     try {
       localStorage.setItem(KEY, JSON.stringify(state));
-      localStorage.setItem(UIKEY, JSON.stringify({ tab: ui.tab, minutes: ui.minutes, focus: ui.focus, readiness: ui.readiness, progressEx: ui.progressEx }));
+      localStorage.setItem(UIKEY, JSON.stringify({ tab: ui.tab, minutes: ui.minutes, focus: ui.focus, readiness: ui.readiness, progressEx: ui.progressEx, sMinutes: ui.sMinutes }));
     } catch (e) { toast('Could not save: this browser is blocking storage.'); }
     if (Cloud && !noUpload) Cloud.schedule();
   }
   function save(now) { clearTimeout(saveTimer); if (now) write(); else saveTimer = setTimeout(write, 120); }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') write();
-    else { tickRest(); requestWake(); }
+    else { tickRest(); tickStretch(); requestWake(); }
   });
   window.addEventListener('pagehide', write);
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* not supported */ }
@@ -66,7 +67,10 @@
     info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>',
     play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l10.5-6.5z"/></svg>',
     photo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>',
-    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></svg>',
+    skip: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5.5v13l9-6.5z"/><rect x="15.5" y="5.5" width="3" height="13" rx="1"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
   };
   const SLOT_NAMES = {
     squat: 'Squat or hack squat', quad2: 'Leg press or split squat', quadIso: 'Leg extension', hinge: 'Hip hinge',
@@ -84,6 +88,7 @@
     if (ui.tab === 'train') renderTrain();
     else if (ui.tab === 'history') renderHistory();
     else if (ui.tab === 'progress') renderProgress();
+    else if (ui.tab === 'stretch') renderStretch();
     else renderSetup();
     renderTop();
   }
@@ -91,10 +96,14 @@
     const m = $('#topmeta');
     if (state.active && state.active.start) { m.innerHTML = `Session <span class="num" style="font-size:18px">${clock(Date.now() - state.active.start)}</span>`; return; }
     if (ui.tab === 'train' && !state.active) { m.textContent = ''; return; }
+    if (ui.tab === 'stretch') {
+      if (state.stretchActive && state.stretchActive.start) { m.innerHTML = `Stretch <span class="num" style="font-size:18px">${clock(Date.now() - state.stretchActive.start)}</span>`; return; }
+      const w = S.weekStats(state, Date.now()); m.textContent = `${w.count} stretch session${w.count === 1 ? '' : 's'} this week`; return;
+    }
     const d = E.dashboard(state, Date.now());
     m.textContent = `${d.weekSessions} of ${d.goal} this week`;
   }
-  setInterval(() => { if (state.active && state.active.start) renderTop(); }, 1000);
+  setInterval(() => { if ((state.active && state.active.start) || (state.stretchActive && state.stretchActive.start)) renderTop(); }, 1000);
   window.addEventListener('scroll', () => $('#top').classList.toggle('scrolled', window.scrollY > 4), { passive: true });
 
   /* ------------------------------------------------------------ train: builder */
@@ -173,6 +182,7 @@
       </div>
       ${banners}
       ${next}
+      ${stretchCard(now)}
       <div class="duo">
         <div class="panel tight"><p class="lbl">Last session</p>${last ? `<p class="strong">${esc(E.sessionName(last))}</p><p class="small">${dShort(last.end)}${lastT.minutes != null ? ', ' + lastT.minutes + ' min' : ''}, ${lastT.sets} sets</p>` : '<p class="small">None yet</p>'}</div>
         <div class="panel tight"><p class="lbl">Latest best</p>${d.pr && ex(d.pr.exId) ? `<p class="strong">${esc(ex(d.pr.exId).name)}</p><p class="small">${d.pr.kind === 'e1rm' ? f(d.pr.value) + ' kg est. max' : d.pr.value + ' reps'}, ${dShort(d.pr.t)}</p>` : '<p class="small">Appears once you beat an earlier lift</p>'}</div>
@@ -345,10 +355,11 @@
   /* ------------------------------------------------------------ wake lock */
   let wake = null;
   async function requestWake() {
-    if (!(state.active && state.active.start && state.settings.keepAwake && 'wakeLock' in navigator) || wake) return;
+    if (!(((state.active && state.active.start) || player) && state.settings.keepAwake && 'wakeLock' in navigator) || wake) return;
     try { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } catch (e) { wake = null; }
   }
   function releaseWake() { try { if (wake) wake.release(); } catch (e) { /* ignore */ } wake = null; }
+  function releaseWakeIfIdle() { if (!(state.active && state.active.start) && !player) releaseWake(); }
 
   /* ------------------------------------------------------------ session actions */
   function startSession() {
@@ -477,14 +488,242 @@
       <button type="button" class="btn primary block" data-action="summary-done">Done</button>`;
   }
 
+  /* ------------------------------------------------------------ stretch */
+  const S = window.Stretch;
+  const SMINS = [10, 15, 20, 30];
+  let player = null;   // { i, mode: 'all' | 'one', steps, k, end, paused, left, pip }
+  const aboutMin = sec => { const h = Math.max(1, Math.round(sec / 30)) / 2; return `${Math.floor(h) || ''}${h % 1 ? '½' : ''} min`; };
+
+  function previewStretch() {
+    const ex = state.prefs.stretchExcluded || {};
+    const key = [ui.sMinutes, ui.sSalt, (state.mobility || []).length, Object.keys(ex).filter(k => ex[k]).join(','), new Date().toDateString()].join('|');
+    if (!ui.sPreview || ui.sPreviewKey !== key) { ui.sPreview = S.build(state, { minutes: ui.sMinutes, now: Date.now(), salt: ui.sSalt }); ui.sPreviewKey = key; }
+    return ui.sPreview;
+  }
+  const sPlan = () => state.stretchActive || previewStretch();
+  function ensureStretch() {
+    if (!state.stretchActive) {
+      state.stretchActive = JSON.parse(JSON.stringify(previewStretch()));
+      state.stretchActive.start = Date.now(); ui.sPreview = null; save(true);
+    }
+    return state.stretchActive;
+  }
+  function nextUndone(plan, from) { for (let j = from; j < plan.items.length; j++) if (!plan.items[j].done) return j; for (let j = 0; j < from; j++) if (!plan.items[j].done) return j; return -1; }
+
+  function stretchCard(now) {
+    const sa = state.stretchActive, w = S.weekStats(state, now);
+    const sub = sa ? `${sa.items.filter(it => it.done).length} of ${sa.items.length} done. Tap to carry on.`
+      : `${w.count ? w.count + ' this week' : 'None yet this week'}${w.last ? ', last on ' + dShort(w.last.end) : ''}. 10 to 30 minutes for hips, lower back and core.`;
+    return `<button type="button" class="stretchcard" data-tab="stretch"><span class="sc-fig">${S.figure('hip_flexor')}</span>
+      <span class="grow"><b>${sa ? 'Stretch in progress' : 'Stretch and mobility'}</b><span class="small">${sub}</span></span><span class="chev" aria-hidden="true">›</span></button>`;
+  }
+
+  function renderStretch() {
+    if (ui.tab !== 'stretch') return;
+    if (ui.sSummary) return renderStretchSummary();
+    const active = state.stretchActive, plan = sPlan(), now = Date.now();
+    const n = plan.items.length, done = plan.items.filter(it => it.done).length;
+    const physio = plan.items.filter(it => S.get(it.exId).physio).length;
+    const w = S.weekStats(state, now);
+    const nxt = nextUndone(plan, player ? player.i : 0);
+    let head;
+    if (!active) {
+      head = `<section class="next">
+        <div class="row" style="align-items:baseline"><h3 class="next-title grow">Today: ${n} exercises</h3><span class="small">about ${plan.estMinutes} min</span></div>
+        <p class="why" style="margin-top:4px">Hips, lower back and core${physio ? `, including ${physio} from your physio` : ''}. The mix changes each session.</p>
+        <p class="lbl" style="margin-top:10px">How long have you got?</p>
+        <div class="minutes four" role="group" aria-label="Minutes available">${SMINS.map(m => `<button type="button" data-action="st-minutes" data-v="${m}" aria-pressed="${ui.sMinutes === m}">${m}</button>`).join('')}</div>
+        <button type="button" class="btn primary block big" data-action="st-all">${ICON.play}Start stretch session</button>
+        <button type="button" class="linkish" data-action="st-newmix" style="margin-top:4px">Show me a different mix</button>
+      </section>`;
+    } else {
+      head = `<section class="next">
+        <h3 class="next-title">Stretch in progress</h3>
+        <p class="sub">${done} of ${n} done${active.start ? ', ' + clock(now - active.start) + ' so far' : ''}.</p>
+        ${!player && nxt >= 0 ? `<button type="button" class="btn primary block big" data-action="st-all">${ICON.play}${done ? 'Carry on' : 'Start'} with ${esc(S.get(plan.items[nxt].exId).name)}</button>` : ''}
+        <div class="row" style="margin-top:10px"><button type="button" class="btn grow" data-action="st-finish">Finish and save</button><button type="button" class="btn ghost danger" data-action="st-discard">Discard</button></div>
+      </section>`;
+    }
+    view.innerHTML = `
+      <h2 style="margin:14px 0 0">Stretch</h2>
+      ${head}
+      ${plan.items.map((it, i) => stCard(it, i)).join('')}
+      <p class="small" style="margin:14px 2px">Exercises marked Physio are from your physio's programme, at the doses they set. Stop anything that causes pain and check with your physio. These plans are general guidance, not medical advice.</p>`;
+  }
+
+  function stCard(it, i) {
+    const x = S.get(it.exId); if (!x) return '';
+    const on = player && player.i === i;
+    return `<article class="stc${it.done ? ' done' : ''}${on ? ' on' : ''}" id="stc-${i}">
+      <button type="button" class="stc-fig" data-action="st-how" data-i="${i}" aria-label="How to do ${esc(x.name)}">${S.figure(x.id)}</button>
+      <div class="stc-body">
+        <div class="stc-head"><h3>${esc(x.name)}</h3>${x.physio ? '<span class="tag physio">Physio</span>' : ''}</div>
+        <p class="stc-dose">${esc(S.doseText(x, it.dose))}</p>
+        <p class="small">${esc(x.works)}. About ${aboutMin(S.secs(x, it.dose))}.</p>
+      </div>
+      ${on ? `<div class="stc-now"><span id="stc-step">${esc(stepLabel(player.steps[player.k]))}</span><div class="stc-prog"><i id="stc-prog"></i></div></div>` : ''}
+      <div class="stc-acts">
+        <button type="button" class="pill${on ? ' stop' : ''}" data-action="st-play" data-i="${i}">${on ? ICON.stop + 'Stop' : ICON.play + (it.done ? 'Again' : 'Timer')}</button>
+        <button type="button" class="pill" data-action="st-how" data-i="${i}">${ICON.info}How to</button>
+        ${it.done ? '' : `<button type="button" class="pill" data-action="st-swap" data-i="${i}" aria-label="Swap ${esc(x.name)}">${ICON.swap}Swap</button>`}
+      </div>
+      <button type="button" class="tick-s" data-action="st-tick" data-i="${i}" aria-pressed="${it.done}" aria-label="${it.done ? 'Mark not done' : 'Mark done'}">${ICON.check}</button>
+    </article>`;
+  }
+
+  function stepLabel(st) {
+    if (!st) return '';
+    if (st.kind === 'work') return st.label + (st.of > 1 ? ` · set ${st.set} of ${st.of}` : '');
+    return st.label;
+  }
+  function scrollToCard(i) { const c = document.getElementById('stc-' + i); if (c && ui.tab === 'stretch') c.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+
+  function startPlayer(i, mode) {
+    const plan = ensureStretch();
+    const it = plan.items[i]; if (!it) return;
+    unlockAudio();
+    const steps = S.steps(S.get(it.exId), it.dose);
+    player = { i, mode, steps, k: 0, end: Date.now() + steps[0].secs * 1000, paused: false, left: 0, pip: '' };
+    requestWake();
+    renderStretch(); tickStretch(); setTimeout(() => scrollToCard(i), 30);
+  }
+  // Move to the next step; returns false when the timer has stopped.
+  function advance() {
+    const plan = state.stretchActive;
+    if (!plan || !plan.items[player.i]) { player = null; return false; }
+    player.k++;
+    if (player.k < player.steps.length) { player.end += player.steps[player.k].secs * 1000; return true; }
+    plan.items[player.i].done = true; save();
+    const nxt = player.mode === 'all' ? nextUndone(plan, player.i + 1) : -1;
+    if (nxt >= 0) {
+      const steps = S.steps(S.get(plan.items[nxt].exId), plan.items[nxt].dose);
+      player = { i: nxt, mode: 'all', steps, k: 0, end: player.end + steps[0].secs * 1000, paused: false, left: 0, pip: '' };
+      setTimeout(() => scrollToCard(nxt), 60);
+      return true;
+    }
+    player = null; releaseWakeIfIdle();
+    if (plan.items.every(it => it.done)) setTimeout(finishStretch, 600);
+    else toast('Done. Start the next one when you’re ready.');
+    return false;
+  }
+  function pip() {
+    if (!audio || !state.settings.beep) return;
+    try {
+      if (audio.state === 'suspended') audio.resume();
+      const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
+      o.frequency.value = 660; o.connect(g); g.connect(audio.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.15, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      o.start(t); o.stop(t + 0.1);
+    } catch (e) { /* audio unavailable */ }
+  }
+  function tickStretch() {
+    const bar = $('#stbar'); if (!bar) return;
+    if (!player || !state.stretchActive) { player = player && state.stretchActive ? player : null; bar.classList.remove('on'); document.body.classList.remove('stretching'); return; }
+    const now = Date.now();
+    if (!player.paused && now >= player.end) {
+      let alive = true;
+      while (alive && player && now >= player.end) alive = advance();
+      beep();
+      if (ui.tab === 'stretch') renderStretch();
+      if (!player) { tickStretch(); return; }
+    }
+    const st = player.steps[player.k];
+    const left = player.paused ? player.left : player.end - now;
+    if (!player.paused && st.kind === 'work') {
+      const sec = Math.ceil(left / 1000), tag = player.k + ':' + sec;
+      if (sec >= 1 && sec <= 3 && player.pip !== tag) { player.pip = tag; pip(); }
+    }
+    const x = S.get(state.stretchActive.items[player.i].exId);
+    bar.classList.add('on'); document.body.classList.add('stretching');
+    bar.dataset.kind = player.paused ? 'paused' : st.kind;
+    $('#sttime').textContent = clock(left);
+    $('#stname').textContent = x.name;
+    $('#stlab').textContent = player.paused ? 'Paused: ' + stepLabel(st) : stepLabel(st);
+    $('#stprog').style.width = Math.min(100, 100 * (1 - left / (st.secs * 1000))) + '%';
+    $('#stpause').innerHTML = player.paused ? ICON.play : ICON.pause;
+    $('#stpause').setAttribute('aria-label', player.paused ? 'Resume' : 'Pause');
+    const total = player.steps.reduce((t, s) => t + s.secs, 0) * 1000;
+    const before = player.steps.slice(0, player.k).reduce((t, s) => t + s.secs, 0) * 1000;
+    const cp = document.getElementById('stc-prog'); if (cp) cp.style.width = Math.min(100, 100 * (before + st.secs * 1000 - left) / total) + '%';
+    const cs = document.getElementById('stc-step'); if (cs) cs.textContent = $('#stlab').textContent;
+  }
+  setInterval(tickStretch, 250);
+
+  function finishStretch() {
+    const plan = state.stretchActive; if (!plan) return;
+    if (!plan.items.some(it => it.done)) { toast('Do at least one exercise first, or discard the session.'); return; }
+    const rec = S.record(plan, Date.now());
+    state.mobility = (state.mobility || []).concat([rec]);
+    state.stretchActive = null; player = null; releaseWakeIfIdle(); tickStretch();
+    ui.sSummary = rec.id; ui.sPreview = null;
+    save(true); render(); window.scrollTo(0, 0);
+  }
+  function renderStretchSummary() {
+    const m = (state.mobility || []).find(x => x.id === ui.sSummary);
+    if (!m) { ui.sSummary = null; return renderStretch(); }
+    const xs = m.items.map(id => S.get(id)).filter(Boolean);
+    view.innerHTML = `<h2>Stretch saved</h2>
+      <p class="sub">${dLong(m.end)}</p>
+      <div class="statline"><div><b>${m.minutes}</b><span>minutes</span></div><div><b>${xs.length}</b><span>exercises</span></div><div><b>${S.weekStats(state, Date.now()).count}</b><span>this week</span></div></div>
+      <div class="panel">${xs.map(x => `<div class="pr"><span>${esc(x.name)}</span><span class="small">${esc(S.AREAS[x.area])}${x.physio ? ', physio' : ''}</span></div>`).join('')}</div>
+      <p class="small" style="margin:0 2px 12px">Next time the planner leans towards the exercises you didn't do today.</p>
+      <button type="button" class="btn primary block" data-action="st-summary-done">Done</button>`;
+  }
+
+  function stHowSheet(exId, backTo) {
+    const x = S.get(exId); if (!x) return;
+    openSheet(`<div class="howfig">${S.figure(x.id)}</div>
+      <h3 style="margin-bottom:2px">${esc(x.name)}${x.physio ? ' <span class="tag physio">Physio</span>' : ''}</h3>
+      <p class="small">${esc(S.AREAS[x.area])}. Works: ${esc(x.works.charAt(0).toLowerCase() + x.works.slice(1))}.</p>
+      <ol class="cues">${x.cues.map(c => `<li>${esc(c)}</li>`).join('')}</ol>
+      <p class="why">${esc(x.dose)}</p>
+      <a class="clip" href="${x.video.url}" target="_blank" rel="noopener"><span class="clip-play">${ICON.play}</span><span><b>${esc(x.video.title)}</b><span>${esc(x.video.channel)}${x.video.year ? ', ' + x.video.year : ''}</span></span></a>
+      <p class="small" style="margin-top:8px"><a href="https://www.youtube.com/results?search_query=${encodeURIComponent(x.name + ' how to')}" target="_blank" rel="noopener" style="color:var(--accent)">More videos for “${esc(x.name)}”</a></p>
+      <div style="height:10px"></div>
+      ${backTo != null ? `<button type="button" class="btn block" data-action="st-swap" data-i="${backTo}">Back to the alternatives</button>` : '<button type="button" class="btn block" data-action="close-sheet">Close</button>'}`);
+  }
+  function stSwapSheet(i) {
+    const plan = sPlan(); const it = plan.items[i]; if (!it) return;
+    const x = S.get(it.exId);
+    const alts = S.alternatives(state, plan, i, Date.now());
+    openSheet(`<h3 style="margin-bottom:2px">Swap ${esc(x.name)}</h3><p class="small">Alternatives that work the same area where possible. Tap one to use it today.</p>
+      ${alts.map(a => `<div class="alt"><button type="button" class="alt-main stalt" data-action="st-swap-to" data-i="${i}" data-ex="${a.id}"><span class="mini">${S.figure(a.id)}</span><span class="grow"><b>${esc(a.name)}</b><span>${esc(S.AREAS[a.area])}: ${esc(S.doseText(a, S.minDose(a)))}</span></span></button>
+        <button type="button" class="alt-how" data-action="st-how" data-ex="${a.id}" data-back="${i}" aria-label="How to do ${esc(a.name)}">${ICON.info}</button></div>`).join('')}
+      <h4>Or</h4>
+      <button type="button" class="opt" data-action="st-exclude" data-i="${i}"><b>Never suggest this exercise</b><span>${x.physio ? 'It’s one of your physio’s. ' : ''}You can bring it back in Setup</span></button>
+      <button type="button" class="opt" data-action="st-remove" data-i="${i}"><b>Remove from today</b><span>Just for this session</span></button>
+      <div style="height:10px"></div><button type="button" class="btn block" data-action="close-sheet">Cancel</button>`);
+  }
+  function stHistSheet(id) {
+    const m = (state.mobility || []).find(x => x.id === id); if (!m) return;
+    const xs = m.items.map(e => S.get(e)).filter(Boolean);
+    openSheet(`<h3>Stretch and mobility</h3><p class="small">${dLong(m.end)}, ${m.minutes} min</p>
+      <div>${xs.map(x => `<div class="outcome"><span><b>${esc(x.name)}</b><br><span class="small">${esc(S.AREAS[x.area])}${x.physio ? ', from your physio' : ''}</span></span></div>`).join('') || '<p class="sub">No exercises recorded.</p>'}</div>
+      <div class="row" style="margin-top:12px"><button type="button" class="btn ghost danger grow" data-action="st-hist-del" data-id="${id}">Delete session</button><button type="button" class="btn grow" data-action="close-sheet">Close</button></div>`);
+  }
+  function stretchSummaryText(days) {
+    const since = Date.now() - days * DAY;
+    const list = (state.mobility || []).filter(m => m.end >= since).sort((a, b) => a.end - b.end);
+    if (!list.length) return '';
+    return `\n\nStretch and mobility sessions (last ${days} days):\n` + list.map(m => `${new Date(m.end).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}: ${m.minutes} min. ${m.items.map(id => (S.get(id) || { name: id }).name).join(', ')}`).join('\n');
+  }
+
   /* ------------------------------------------------------------ history */
   function renderHistory() {
-    const list = state.sessions.filter(s => s.end).sort((a, b) => b.end - a.end);
-    if (!list.length) { view.innerHTML = `<h2>History</h2><div class="empty"><p>No sessions yet.</p><p class="sub">Build one on the Train tab. Every set you log appears here and feeds the next session.</p><button type="button" class="btn primary" data-tab="train">Go to Train</button></div>`; return; }
+    const list = state.sessions.filter(s => s.end).concat((state.mobility || []).filter(m => m.end).map(m => Object.assign({ stretch: true }, m))).sort((a, b) => b.end - a.end);
+    if (!list.length) { view.innerHTML = `<h2>History</h2><div class="empty"><p>No sessions yet.</p><p class="sub">Start one from Home or the Stretch tab. Everything you finish appears here and feeds the next plan.</p><button type="button" class="btn primary" data-tab="train">Go to Home</button></div>`; return; }
     let html = '<h2>History</h2>', month = '';
     list.forEach(s => {
       const m = new Date(s.end).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       if (m !== month) { html += `<p class="month">${m}</p>`; month = m; }
+      if (s.stretch) {
+        const d = new Date(s.end), n = (s.items || []).length;
+        html += `<button type="button" class="hist st" data-action="st-hist" data-id="${s.id}">
+          <span class="d"><b>${d.getDate()}</b><span>${d.toLocaleDateString('en-GB', { weekday: 'short' })}</span></span>
+          <span><b>Stretch and mobility</b><br><span class="small">${s.minutes} min, ${n} exercise${n === 1 ? '' : 's'}</span></span>
+          <span class="small">Stretch</span></button>`;
+        return;
+      }
       const t = s.totals || E.sessionTotals(state, s);
       const d = new Date(s.end);
       html += `<button type="button" class="hist" data-action="hist-open" data-id="${s.id}">
@@ -687,6 +926,7 @@
     const st = state.settings, now = Date.now();
     const standalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
     const excluded = Object.keys(state.prefs.excluded).filter(k => state.prefs.excluded[k]);
+    const stEx = Object.keys(state.prefs.stretchExcluded || {}).filter(k => state.prefs.stretchExcluded[k]);
     const seg = (action, cur, opts) => `<div class="seg">${opts.map(([v, l]) => `<button type="button" data-action="${action}" data-v="${v}" aria-pressed="${String(cur) === String(v)}">${l}</button>`).join('')}</div>`;
     view.innerHTML = `<h2>Setup</h2>
       ${standalone ? '' : `<section class="panel"><h4 style="margin-top:0">Add Rebuild to your home screen</h4>
@@ -715,13 +955,14 @@
         <div><p class="lbl">Dumbbell steps</p>${seg('set-db', st.dbStep, [[1, '1 kg'], [2, '2 kg'], [2.5, '2.5 kg']])}</div>
         <div><p class="lbl">Barbell weight</p>${seg('set-bar', st.barWeight, [[15, '15 kg'], [20, '20 kg']])}</div>
         <div><p class="lbl">Plates available</p><div class="row wrap">${[25, 20, 15, 10, 5, 2.5, 1.25].map(p => `<button type="button" class="chip" data-action="toggle-plate" data-v="${p}" aria-pressed="${st.plates.includes(p)}">${f(p)} kg</button>`).join('')}</div></div>
-        <label class="check"><input type="checkbox" data-setting="beep" ${st.beep ? 'checked' : ''}><span class="grow">Beep when rest is over</span></label>
+        <label class="check"><input type="checkbox" data-setting="beep" ${st.beep ? 'checked' : ''}><span class="grow">Beep for rest and stretch timers</span></label>
         <label class="check"><input type="checkbox" data-setting="keepAwake" ${st.keepAwake ? 'checked' : ''}><span class="grow">Keep the screen on during a session</span></label>
       </div>
 
       <h4>Your exercises</h4>
       <div class="panel">
         ${excluded.length ? `<p class="lbl">Never suggested</p>${excluded.map(id => `<div class="check"><span class="grow">${esc(ex(id) ? ex(id).name : id)}</span><button type="button" class="btn" style="min-height:38px" data-action="unexclude" data-ex="${id}">Bring back</button></div>`).join('')}<div class="rule"></div>` : ''}
+        ${stEx.length ? `<p class="lbl">Stretches never suggested</p>${stEx.map(id => `<div class="check"><span class="grow">${esc(S.get(id) ? S.get(id).name : id)}</span><button type="button" class="btn" style="min-height:38px" data-action="st-unexclude" data-ex="${id}">Bring back</button></div>`).join('')}<div class="rule"></div>` : ''}
         ${state.custom.length ? `<p class="lbl">Added by you</p>${state.custom.map(c => `<div class="check"><span class="grow">${esc(c.name)} <span class="small">${esc(SLOT_NAMES[c.slots[0]] || '')}</span></span><button type="button" class="btn danger" style="min-height:38px" data-action="del-custom" data-ex="${c.id}">Delete</button></div>`).join('')}<div class="rule"></div>` : ''}
         <p class="lbl">Add a machine or exercise</p>
         <label class="field"><span>Name</span><input type="text" id="c-name" placeholder="e.g. Iso-lateral high row"></label>
@@ -746,7 +987,7 @@
           <button type="button" class="btn block danger" data-action="erase">Erase all data</button>
         </div>
       </div>
-      <p class="small" style="margin:18px 0">Rebuild 1.3. Session plans are general training guidance, not medical advice.</p>`;
+      <p class="small" style="margin:18px 0">Rebuild 1.4. Session and stretch plans are general training guidance, not medical advice.</p>`;
   }
 
   async function backup() {
@@ -770,7 +1011,7 @@
   /* ------------------------------------------------------------ events */
   document.addEventListener('click', ev => {
     const tabBtn = ev.target.closest('[data-tab]');
-    if (tabBtn) { if (tabBtn.dataset.tab === 'train' && ui.tab === 'train') ui.dash = !state.active ? false : !ui.dash; ui.tab = tabBtn.dataset.tab; closeSheet(); save(); render(); window.scrollTo(0, 0); return; }
+    if (tabBtn) { if (tabBtn.dataset.tab === 'train' && ui.tab === 'train') ui.dash = !state.active ? false : !ui.dash; if (tabBtn.dataset.tab === 'stretch' && ui.tab === 'stretch') ui.sSummary = null; ui.tab = tabBtn.dataset.tab; closeSheet(); save(); render(); window.scrollTo(0, 0); return; }
     const el = ev.target.closest('[data-action]');
     if (!el || el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
     const a = el.dataset.action, i = el.dataset.i != null ? +el.dataset.i : null, v = el.dataset.v;
@@ -870,20 +1111,67 @@
         save(true); renderSetup(); toast(`${name} added. The planner can now use it for ${SLOT_NAMES[slot].toLowerCase()}.`); break;
       }
       case 'backup': backup(); break;
-      case 'copy-claude': copyText(E.exportSummary(state, 14, Date.now())); break;
+      case 'copy-claude': copyText(E.exportSummary(state, 14, Date.now()) + stretchSummaryText(14)); break;
       case 'erase': {
         const inCloud = Cloud && Cloud.signedIn();
         const msg = inCloud ? 'Erase every session, setting and exercise on this phone AND in your cloud copy? This cannot be undone.'
           : 'Erase every session, setting and exercise on this phone? This cannot be undone.' + (Cloud && Cloud.isConfigured() ? ' Your cloud copy is not affected while you are signed out.' : '');
         if (confirm(msg) && confirm('Are you sure? Consider backing up first.')) {
           const now = Date.now();
-          const gone = state.sessions.map(x => ({ id: x.id, t: now })).concat(state.deleted || []);
+          const gone = state.sessions.map(x => ({ id: x.id, t: now })).concat((state.mobility || []).map(x => ({ id: x.id, t: now }))).concat(state.deleted || []);
+          player = null; tickStretch();
           state = E.newState();
           if (inCloud) { state.deleted = gone; state.profileUpdatedAt = now; state.activeUpdatedAt = now; }
           save(true); render(); toast(inCloud ? 'All data erased here and in the cloud.' : 'All data erased.');
         }
         break;
       }
+      case 'st-minutes': ui.sMinutes = +v; ui.sPreview = null; save(); renderStretch(); break;
+      case 'st-newmix': ui.sSalt++; ui.sPreview = null; renderStretch(); break;
+      case 'st-all': { const plan = sPlan(); const j = nextUndone(plan, 0); if (j < 0) { toast('Everything is done. Tap Finish and save.'); break; } startPlayer(j, 'all'); break; }
+      case 'st-play': if (player && player.i === i) { player = null; releaseWakeIfIdle(); tickStretch(); renderStretch(); } else startPlayer(i, 'one'); break;
+      case 'st-pause': if (player) { if (player.paused) { player.end = Date.now() + player.left; player.paused = false; } else { player.left = Math.max(0, player.end - Date.now()); player.paused = true; } tickStretch(); } break;
+      case 'st-skip': if (player) { if (player.paused) player.paused = false; player.end = Date.now(); tickStretch(); } break;
+      case 'st-stop': player = null; releaseWakeIfIdle(); tickStretch(); renderStretch(); break;
+      case 'st-tick': {
+        const plan = ensureStretch(); const it = plan.items[i]; if (!it) break;
+        it.done = !it.done; if (player && player.i === i) { player = null; releaseWakeIfIdle(); tickStretch(); }
+        save(true); renderStretch(); break;
+      }
+      case 'st-how': stHowSheet(el.dataset.ex || sPlan().items[i].exId, el.dataset.back != null ? +el.dataset.back : null); break;
+      case 'st-swap': stSwapSheet(i); break;
+      case 'st-swap-to': {
+        const plan = sPlan(); const cur = player ? plan.items[player.i] : null;
+        if (player && player.i === i) { player = null; tickStretch(); }
+        S.swap(plan, i, el.dataset.ex); if (player) player.i = plan.items.indexOf(cur);
+        if (state.stretchActive) save(true); closeSheet(); renderStretch(); break;
+      }
+      case 'st-exclude': {
+        const plan = sPlan(); const x = S.get(plan.items[i].exId);
+        state.prefs.stretchExcluded = Object.assign({}, state.prefs.stretchExcluded, { [x.id]: true });
+        const alt = S.alternatives(state, plan, i, Date.now())[0];
+        const cur = player ? plan.items[player.i] : null;
+        if (player && player.i === i) { player = null; tickStretch(); }
+        if (alt) S.swap(plan, i, alt.id); else { plan.items.splice(i, 1); S.finish(plan); }
+        if (player) player.i = plan.items.indexOf(cur);
+        save(true); closeSheet(); renderStretch(); toast(`${x.name} won't be suggested again.`); break;
+      }
+      case 'st-remove': {
+        const plan = sPlan(); const cur = player ? plan.items[player.i] : null;
+        if (player && player.i === i) { player = null; tickStretch(); }
+        plan.items.splice(i, 1); S.finish(plan); if (player) player.i = plan.items.indexOf(cur);
+        if (state.stretchActive) save(true); closeSheet(); renderStretch(); break;
+      }
+      case 'st-finish': finishStretch(); break;
+      case 'st-discard':
+        if (confirm('Discard this stretch session? Nothing from it will be saved.')) { state.stretchActive = null; player = null; ui.sPreview = null; releaseWakeIfIdle(); tickStretch(); save(true); render(); window.scrollTo(0, 0); }
+        break;
+      case 'st-summary-done': ui.sSummary = null; renderStretch(); window.scrollTo(0, 0); break;
+      case 'st-hist': stHistSheet(el.dataset.id); break;
+      case 'st-hist-del':
+        if (confirm('Delete this stretch session for good?')) { state.mobility = (state.mobility || []).filter(x => x.id !== el.dataset.id); state.deleted = (state.deleted || []).concat([{ id: el.dataset.id, t: Date.now() }]); ui.sPreview = null; save(true); closeSheet(); renderHistory(); }
+        break;
+      case 'st-unexclude': { const ex2 = Object.assign({}, state.prefs.stretchExcluded); delete ex2[el.dataset.ex]; state.prefs.stretchExcluded = ex2; ui.sPreview = null; save(); renderSetup(); break; }
       case 'cloud-signin': cloudSignIn(); break;
       case 'cloud-reset': cloudReset(); break;
       case 'cloud-signout':
@@ -927,6 +1215,7 @@
           const data = JSON.parse(r.result);
           if (!data || !Array.isArray(data.sessions)) throw new Error('not a backup');
           if (!confirm(`Replace everything on this device with the backup (${data.sessions.length} sessions)?`)) return;
+          player = null; tickStretch();
           state = E.normalise(data); state.profileUpdatedAt = Date.now(); state.activeUpdatedAt = Date.now(); state._profileSig = null; state._activeSig = null;
           save(true); render(); toast('Backup restored.');
         } catch (e) { toast('That file is not a Rebuild backup.'); }

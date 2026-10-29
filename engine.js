@@ -291,7 +291,7 @@
   }
 
   function newState() {
-    return { v: 1, settings: defaultSettings(), sessions: [], active: null, block: null, custom: [], prefs: { fav: {}, excluded: {}, inc: {} } };
+    return { v: 1, settings: defaultSettings(), sessions: [], active: null, block: null, custom: [], prefs: { fav: {}, excluded: {}, inc: {}, stretchExcluded: {} }, mobility: [], stretchActive: null };
   }
 
   // Bring an older or partial state up to the current shape.
@@ -301,7 +301,8 @@
     const out = Object.assign(base, s);
     out.settings = Object.assign(defaultSettings(), s.settings || {});
     out.settings.equipment = Object.assign(defaultSettings().equipment, (s.settings || {}).equipment || {});
-    out.prefs = Object.assign({ fav: {}, excluded: {}, inc: {} }, s.prefs || {});
+    out.prefs = Object.assign({ fav: {}, excluded: {}, inc: {}, stretchExcluded: {} }, s.prefs || {});
+    out.mobility = Array.isArray(s.mobility) ? s.mobility : [];
     out.sessions = Array.isArray(s.sessions) ? s.sessions : [];
     out.custom = Array.isArray(s.custom) ? s.custom : [];
     return out;

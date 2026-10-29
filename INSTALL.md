@@ -6,7 +6,7 @@ Rebuild is a small web app that builds a gym session to fit the time you have, p
 
 **What is in the folder**
 
-`index.html`, `app.js`, `engine.js` and `guides.js` are the app itself. `cloud.js`, `firebase.js` and `cloud-config.js` handle cloud saving. `sw.js` and `manifest.webmanifest` let it install to the home screen and work without signal. The `icons` and `fonts` folders hold the app icon and the number typeface. This file is only instructions and is not needed by the app.
+`index.html`, `app.js`, `engine.js`, `guides.js` and `stretch.js` are the app itself. `cloud.js`, `firebase.js` and `cloud-config.js` handle cloud saving. `sw.js` and `manifest.webmanifest` let it install to the home screen and work without signal. The `icons` and `fonts` folders hold the app icon and the number typeface. This file is only instructions and is not needed by the app.
 
 **Step 1: put it on GitHub Pages (about ten minutes, easiest on your PC)**
 
@@ -52,7 +52,7 @@ service cloud.firestore {
 ```
 
 5. Go back to the project's overview page and click the Web icon (`</>`). Give the app the nickname `Rebuild`, leave Firebase Hosting unticked, and click Register app. Firebase shows a block of code containing `const firebaseConfig = { apiKey: ... };`. Copy from `const firebaseConfig` down to the closing `};`. You can find it again later under the gear icon, Project settings, General, Your apps. These values identify your project and are not secret; Google's documentation says they are fine in a public repository, because the rules above do the protecting.
-6. In your GitHub `rebuild` repository, open `cloud-config.js`, click the pencil (Edit) button, replace the example `const firebaseConfig = { ... };` block with the one you copied, and click Commit changes. (Alternatively, paste the block into Setup, Cloud saving on the phone; that stores it on that phone only.)
+6. In your GitHub `rebuild` repository, open `cloud-config.js`, click the pencil (Edit) button, replace the example `const firebaseConfig = { ... };` block with the one you copied, and click Commit changes. (Alternatively, paste the block into Setup, Cloud saving on the phone; that stores it on that phone only.) GitHub will then email you that it has found a Google API key in `cloud-config.js`. This is expected, because GitHub flags every Google key in a public repository. Do not delete or replace the key, as the app needs it. Instead, at console.cloud.google.com select the `rebuild` project, open APIs & Services, then Credentials, and open the key (usually named "Browser key (auto created by Firebase)"). Check that API restrictions is set to Restrict key and that Generative Language API (Gemini) is not in the list, and leave Application restrictions at None. Then close the GitHub alert, noting that it is a Firebase web key protected by security rules.
 7. On the iPhone, open Rebuild with signal, close it and open it again so it loads the new settings. Go to Setup, Cloud saving, enter the email and password from step 2 and tap Sign in. The first sign-in uploads everything already on the phone. The line at the foot of the Home screen then reads "Saved to the cloud at" and the time.
 
 From then on every change saves on the phone first and uploads a few seconds later. With no signal the Home screen says the changes will upload automatically, and they do as soon as signal returns. Signing in on another device downloads everything. Signing out keeps the data on the phone. Erase all data, while signed in, deletes the cloud copy as well.
@@ -60,6 +60,12 @@ From then on every change saves on the phone first and uploads a few seconds lat
 **Using it**
 
 The Home tab is a dashboard: sessions this week against your weekly goal, sets, volume compared with the same point last week, your streak, your last session and latest best, and how recovered each muscle group is. The Next session panel shows what the planner suggests. Choose how many minutes you have, tap Start next session, and the day's workout opens. Each exercise has a How to button (technique cues, a specific coaching video for most exercises with a link to more videos, and, for Watson machines, a link to photos of the machine) and a Swap button offering three alternatives that do the same job, usually one machine, one free-weight and one cable option.
+
+**Stretch tab**
+
+The Stretch tab (also reached from the Stretch and mobility card on Home) builds a 10, 15, 20 or 30-minute session for hips, lower back and core from a library of 17 exercises, including the five from your physio at the doses they set. Each session starts with a gentle warm-up, includes at least one of your physio's strength exercises, shares the time between hips, core and lower back, and ends with a wind-down stretch. It leans away from whatever you did in your last two stretch sessions, so the mix changes each time; "Show me a different mix" reshuffles it on the day. Each exercise card has a drawing of the position (tap it for the how-to), a Timer button, a How to sheet with cues and a coaching video, a Swap button with three alternatives, and a tick to mark it done by hand.
+
+Start stretch session runs every exercise in order: ten seconds to get into position, then each hold or set with a countdown, the side switches and rests between sets. The bar at the bottom turns blue while you are working, pips in the last three seconds and beeps when it moves on; pause and skip are on the bar. Finished stretch sessions appear in History and count on the Home card, but they do not affect the gym planner's recovery or progression.
 
 **How it decides what you do**
 
@@ -77,4 +83,4 @@ Upload the replacement files to the same repository, overwriting the old ones, a
 
 **Known limits**
 
-The rest timer counts from timestamps, so it is correct when you return to the app, but iOS pauses web apps when the screen locks, so the end-of-rest beep only sounds while the app is open. Keep the screen on during a session (Setup has a switch for this; Apple added support for it in home-screen web apps in iOS 18.4). Session plans are general training guidance, not medical advice.
+The rest and stretch timers count from timestamps, so they are correct when you return to the app, but iOS pauses web apps when the screen locks, so the beeps only sound while the app is open. Keep the screen on during a session (Setup has a switch for this; Apple added support for it in home-screen web apps in iOS 18.4). Session and stretch plans are general training guidance, not medical advice; stop anything that causes pain and check with your physio.

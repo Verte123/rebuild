@@ -2,9 +2,9 @@
  * Serves the app from the cache first so it opens instantly in the gym with no signal,
  * then refreshes the cache in the background. Change VERSION whenever you upload new files.
  */
-const VERSION = 'rebuild-1.3.0';
+const VERSION = 'rebuild-1.4.0';
 const FILES = [
-  './', './index.html', './app.js', './engine.js', './guides.js', './firebase.js', './cloud.js', './cloud-config.js', './manifest.webmanifest',
+  './', './index.html', './app.js', './engine.js', './guides.js', './stretch.js', './firebase.js', './cloud.js', './cloud-config.js', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',
   './fonts/bc-500.woff2', './fonts/bc-600.woff2', './fonts/bc-700.woff2'
 ];

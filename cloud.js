@@ -1,7 +1,7 @@
 /* Rebuild — cloud saving with Google Firebase.
  * The phone keeps a full copy of your data and works offline. When you are signed in and have signal,
  * changes upload to your own Firestore database, and other devices you sign in on download them.
- * Merge rules: completed sessions are combined from both sides (newest edit wins, deletions are remembered);
+ * Merge rules: completed gym and stretch sessions are combined from both sides (newest edit wins, deletions are remembered);
  * settings and the session in progress take whichever side changed most recently.
  */
 (function (root, factory) {
@@ -18,7 +18,7 @@
   }
   const sig = o => hash(JSON.stringify(o === undefined ? null : o));
   const ver = s => (s && (s.updatedAt || s.end)) || 0;
-  const profileOf = st => ({ settings: st.settings, prefs: st.prefs, custom: st.custom || [], deleted: st.deleted || [] });
+  const profileOf = st => ({ settings: st.settings, prefs: st.prefs, custom: st.custom || [], deleted: st.deleted || [], mobility: st.mobility || [] });
 
   // Record when settings or the session in progress last changed, so the newest side wins a merge.
   function stamp(st, now) {
@@ -44,6 +44,11 @@
       out.settings = d.settings; out.prefs = d.prefs; out.custom = d.custom || [];
       out.profileUpdatedAt = remote.profile.updatedAt;
     }
+    // Stretch sessions are kept with the settings but combined from both sides, like gym sessions.
+    const mob = {};
+    (local.mobility || []).forEach(m => { mob[m.id] = m; });
+    ((remote.profile && remote.profile.data.mobility) || []).forEach(m => { const l = mob[m.id]; if (!l || ver(m) > ver(l)) mob[m.id] = m; });
+    out.mobility = Object.keys(mob).filter(id => !tomb[id]).map(id => mob[id]).sort((a, b) => (a.end || 0) - (b.end || 0));
     if (remote.active && (remote.active.updatedAt || 0) > (local.activeUpdatedAt || 0)) {
       out.active = remote.active.data || null;
       out.activeUpdatedAt = remote.active.updatedAt;
